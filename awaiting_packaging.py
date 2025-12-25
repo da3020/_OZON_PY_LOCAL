@@ -33,29 +33,10 @@ def map_category_name(category_id, category_map, default_name):
 
 
 # -----------------------------
-# SERVER COMMUNICATION
-# -----------------------------
-def send_batch_to_server(batch_endpoint: str, payload: dict):
-    response = requests.post(batch_endpoint, json=payload, timeout=20)
-
-    if response.status_code != 200:
-        raise RuntimeError(
-            f"Ошибка отправки batch: {response.status_code} {response.text}"
-        )
-
-    print("Batch успешно отправлен на сервер:")
-    print(response.json())
-
-
-# -----------------------------
 # MAIN
 # -----------------------------
 def main():
     load_dotenv()
-
-    batch_endpoint = os.getenv("PRODUCTION_BATCH_CREATE_URL")
-    if not batch_endpoint:
-        raise RuntimeError("Не задан PRODUCTION_BATCH_CREATE_URL в .env")
 
     accounts = load_accounts()
     category_map, default_category = load_category_config()
@@ -94,7 +75,7 @@ def main():
         }
 
         # -----------------------------
-        # LOAD PRODUCT INFO (icons + categories)
+        # LOAD PRODUCT INFO (ICONS + CATEGORY)
         # -----------------------------
         product_info = {}
         if offer_ids:
@@ -165,15 +146,7 @@ def main():
 
     df.to_excel("reports/unfulfilled.xlsx", index=False)
 
-    # -----------------------------
-    # SEND BATCH
-    # -----------------------------
-    send_batch_to_server(batch_endpoint, {
-        "batch_id": batch_id,
-        "batch_created_at": batch_created_at,
-        "total_orders": len(df),
-        "items": batch_items,
-    })
+    print("\nГотово. Категории восстановлены.")
 
 
 if __name__ == "__main__":
