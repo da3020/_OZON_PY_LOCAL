@@ -75,67 +75,66 @@
     </table>
 
     <script>
+        let ITEMS = []
+
         async function loadItems() {
-            const res = await fetch("/api/items");
-            const data = await res.json();
-
-            const tbody = document.querySelector("#items-table tbody");
-            tbody.innerHTML = "";
-
-            data.items.forEach(item => {
-                const tr = document.createElement("tr");
-                tr.className = "status-" + item.status;
-
-                const img = Array.isArray(item.image_url)
-                    ? item.image_url[0]
-                    : item.image_url;
-
-                tr.innerHTML = `
-            <td>${img ? `<img src="${img}">` : ""}</td>
-            <td>${item.account}</td>
-            <td>${item.posting_number}</td>
-            <td>${item.offer_id}</td>
-            <td>${item.category}</td>
-            <td>${item.quantity}</td>
-            <td>${item.status}</td>
-            <td>
-                <button onclick="setStatus('${item.item_id}', 'stock')">Склад</button>
-                <button onclick="setStatus('${item.item_id}', 'awaiting_packaging')">В работу</button>
-                <button onclick="setStatus('${item.item_id}', 'delayed')">Отложить</button>
-            </td>
-        `;
-
-                tbody.appendChild(tr);
-            });
+            const res = await fetch("/api/items")
+            const data = await res.json()
+            ITEMS = data.items
+            renderTable()
         }
 
+        function renderTable() {
+            const tbody = document.querySelector("#items-table tbody")
+            tbody.innerHTML = ""
+
+            ITEMS.forEach(item => {
+                const tr = document.createElement("tr")
+
+                tr.innerHTML = `
+          <td><img src="${item.image_url?.[0] || ""}" width="60"></td>
+          <td>${item.account}</td>
+          <td>${item.posting_number}</td>
+          <td>${item.offer_id}</td>
+          <td>${item.category}</td>
+          <td>${item.quantity}</td>
+          <td>${item.status}</td>
+          <td>
+            <button onclick="setStatus('${item.item_id}', 'stock')">Склад</button>
+            <button onclick="setStatus('${item.item_id}', 'print')">Печать</button>
+            <button onclick="setStatus('${item.item_id}', 'done')">Готово</button>
+          </td>
+        `
+                tbody.appendChild(tr)
+            })
+        }
+
+
         async function setStatus(itemId, status) {
-            console.log("UPDATE", itemId, status);
+            console.log("UPDATE ITEM:", itemId, status)
 
             const res = await fetch("/api/item/update", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     item_id: itemId,
                     status: status
                 })
-            });
+            })
 
-            const text = await res.text();
-            console.log("SERVER RESPONSE:", res.status, text);
+            const txt = await res.text()
+            console.log("SERVER RESPONSE:", res.status, txt)
 
-            if (!res.ok) {
-                alert("Ошибка обновления статуса: " + text);
-                return;
+            if (res.ok) {
+                await loadItems()
+            } else {
+                alert("Ошибка: " + txt)
             }
-
-            loadItems();
         }
 
-        loadItems();
+        loadItems()
     </script>
+
 
 </body>
 
