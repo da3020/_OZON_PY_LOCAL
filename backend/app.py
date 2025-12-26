@@ -1,36 +1,27 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from pathlib import Path
 import json
-from datetime import datetime
+from pathlib import Path
+from datetime import datetime, timezone
 
 app = FastAPI()
 
-# -----------------------------
-# CORS (для file://)
-# -----------------------------
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 ROOT = Path(__file__).parent
-ITEMS_DIR = ROOT / "storage" / "items"
-HISTORY_DIR = ROOT / "storage" / "history"
+DATA_ITEMS = ROOT / "data" / "items"
+DATA_HISTORY = ROOT / "data" / "history"
+UI_DIR = ROOT / "ui"
 
-ITEMS_DIR.mkdir(parents=True, exist_ok=True)
-HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+DATA_ITEMS.mkdir(parents=True, exist_ok=True)
+DATA_HISTORY.mkdir(parents=True, exist_ok=True)
 
 # -----------------------------
 # MODELS
 # -----------------------------
-class StatusUpdate(BaseModel):
+class ItemUpdate(BaseModel):
     item_id: str
-    new_status: str
-    user: str | None = None
+    status: str
 
 # -----------------------------
 # API
@@ -39,41 +30,57 @@ class StatusUpdate(BaseModel):
 def get_items():
     items = []
 
-    for file in ITEMS_DIR.glob("*.json"):
-        with open(file, encoding="utf-8") as f:
-            items.append(json.load(f))
+    for f in DATA_ITEMS.glob("*.json"):
+        with open(f, "r", encoding="utf-8") as fh:
+            items.append(json.load(fh))
 
     return {"items": items}
 
 
 @app.post("/api/item/update")
-def update_item(payload: StatusUpdate):
-    item_file = ITEMS_DIR / f"{payload.item_id}.json"
+def update_item(payload: ItemUpdate):
+    item_file = DATA_ITEMS / f"{payload.item_id}.json"
 
     if not item_file.exists():
-        return {"status": "error", "message": "item not found"}
+        raise HTTPException(status_code=404, detail="item не найден")
 
-    with open(item_file, encoding="utf-8") as f:
-        item = json.load(f)
+    with open(item_file, "r", encoding="utf-8") as fh:
+        item = json.load(fh)
 
     old_status = item.get("status")
-    item["status"] = payload.new_status
-    item["updated_at"] = datetime.utcnow().isoformat()
 
-    with open(item_file, "w", encoding="utf-8") as f:
-        json.dump(item, f, ensure_ascii=False, indent=2)
+    item["status"] = payload.status
+    item["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    with open(item_file, "w", encoding="utf-8") as fh:
+        json.dump(item, fh, ensure_ascii=False, indent=2)
 
     # history
-    history_record = {
+    history_entry = {
         "item_id": payload.item_id,
         "from": old_status,
-        "to": payload.new_status,
-        "user": payload.user,
-        "timestamp": datetime.utcnow().isoformat(),
+        "to": payload.status,
+        "at": item["updated_at"],
     }
 
-    history_file = HISTORY_DIR / f"{payload.item_id}_{int(datetime.utcnow().timestamp())}.json"
-    with open(history_file, "w", encoding="utf-8") as f:
-        json.dump(history_record, f, ensure_ascii=False, indent=2)
+    history_file = DATA_HISTORY / f"{payload.item_id}.json"
+    history = []
+
+    if history_file.exists():
+        history = json.loads(history_file.read_text(encoding="utf-8"))
+
+    history.append(history_entry)
+    history_file.write_text(
+        json.dumps(history, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
 
     return {"status": "ok"}
+
+
+# -----------------------------
+# UI
+# -----------------------------
+@app.get("/", response_class=HTMLResponse)
+def dashboard():
+    return (UI_DIR / "dashboard.html").read_text(encoding="utf-8")

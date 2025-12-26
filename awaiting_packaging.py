@@ -1,9 +1,11 @@
 import os
 import yaml
+import json
 import pandas as pd
 import requests
 import uuid
 
+from pathlib import Path
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
@@ -33,10 +35,56 @@ def map_category_name(category_id, category_map, default_name):
 
 
 # -----------------------------
+# UI EXPORT (LOCAL DASHBOARD)
+# -----------------------------
+def export_items_for_ui(items: list):
+    base = Path("backend/data/items")
+    base.mkdir(parents=True, exist_ok=True)
+
+    for item in items:
+        item_id = f"{item['posting_number']}_{item['offer_id']}.json"
+        path = base / item_id
+
+        ui_item = {
+            "id": item_id,
+            "posting_number": item["posting_number"],
+            "offer_id": item["offer_id"],
+            "account": item["account"],
+            "quantity": item["quantity"],
+            "category": item["category"],          # ← КАТЕГОРИЯ ДЛЯ UI
+            "image_url": item["image_url"],
+            "status": "new",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(ui_item, f, ensure_ascii=False, indent=2)
+
+
+# -----------------------------
+# SERVER COMMUNICATION
+# -----------------------------
+def send_batch_to_server(batch_endpoint: str, payload: dict):
+    response = requests.post(batch_endpoint, json=payload, timeout=20)
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Ошибка отправки batch: {response.status_code} {response.text}"
+        )
+
+    print("Batch успешно отправлен на сервер:")
+    print(response.json())
+
+
+# -----------------------------
 # MAIN
 # -----------------------------
 def main():
     load_dotenv()
+
+    batch_endpoint = os.getenv("PRODUCTION_BATCH_CREATE_URL")
+    if not batch_endpoint:
+        raise RuntimeError("Не задан PRODUCTION_BATCH_CREATE_URL в .env")
 
     accounts = load_accounts()
     category_map, default_category = load_category_config()
@@ -58,6 +106,9 @@ def main():
         client_id = os.getenv(acc["client_id_env"])
         api_key = os.getenv(acc["api_key_env"])
 
+        if not client_id or not api_key:
+            raise RuntimeError(f"Нет ключей для аккаунта {acc['name']}")
+
         ozon_client = OzonClient(client_id, api_key)
         product_client = OzonProductClient(client_id, api_key)
 
@@ -75,7 +126,7 @@ def main():
         }
 
         # -----------------------------
-        # LOAD PRODUCT INFO (ICONS + CATEGORY)
+        # LOAD PRODUCT INFO (icons + categories)
         # -----------------------------
         product_info = {}
         if offer_ids:
@@ -110,7 +161,7 @@ def main():
 
             for item in products:
                 offer_id = item["offer_id"]
-                info = product_info.get(offer_id, {})
+                info = product_info.get(offer_id, {}) or {}
 
                 category_id = info.get("description_category_id")
                 category_name = map_category_name(
@@ -124,7 +175,7 @@ def main():
                     "posting_number": p.get("posting_number"),
                     "offer_id": offer_id,
                     "quantity": item.get("quantity", 1),
-                    "category": category_name,
+                    "category": category_name,          # ← КЛЮЧЕВО
                     "image_url": info.get("primary_image"),
                 })
 
@@ -146,7 +197,21 @@ def main():
 
     df.to_excel("reports/unfulfilled.xlsx", index=False)
 
-    print("\nГотово. Категории восстановлены.")
+    # -----------------------------
+    # EXPORT FOR LOCAL UI
+    # -----------------------------
+    print("Экспорт данных для локального UI...")
+    export_items_for_ui(batch_items)
+
+    # -----------------------------
+    # SEND BATCH
+    # -----------------------------
+    send_batch_to_server(batch_endpoint, {
+        "batch_id": batch_id,
+        "batch_created_at": batch_created_at,
+        "total_orders": len(df),
+        "items": batch_items,
+    })
 
 
 if __name__ == "__main__":

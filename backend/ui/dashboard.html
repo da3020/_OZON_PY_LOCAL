@@ -4,52 +4,67 @@
 <head>
     <meta charset="UTF-8">
     <title>Production Dashboard</title>
+
     <style>
         body {
             font-family: Arial, sans-serif;
-            background: #f5f5f5;
+            margin: 20px;
         }
 
         table {
             border-collapse: collapse;
             width: 100%;
-            background: white;
         }
 
         th,
         td {
-            border: 1px solid #ddd;
+            border: 1px solid #ccc;
             padding: 6px;
-            vertical-align: middle;
+            text-align: left;
         }
 
         th {
-            background: #eee;
+            background: #f0f0f0;
         }
 
         img {
-            width: 48px;
-            height: 48px;
-            object-fit: cover;
+            height: 40px;
         }
 
-        .btn {
-            padding: 4px 8px;
-            margin: 2px;
+        button {
+            margin-right: 4px;
             cursor: pointer;
+        }
+
+        .status-new {
+            background: #eef;
+        }
+
+        .status-stock {
+            background: #dfd;
+        }
+
+        .status-awaiting_packaging {
+            background: #ffd;
+        }
+
+        .status-delayed {
+            background: #fdd;
         }
     </style>
 </head>
 
 <body>
 
-    <h1>Production Dashboard</h1>
+    <h1>Производственный дашборд</h1>
 
     <table id="items-table">
         <thead>
             <tr>
                 <th>Иконка</th>
-                <th>Артикул</th>
+                <th>Аккаунт</th>
+                <th>Заказ</th>
+                <th>Offer</th>
                 <th>Категория</th>
                 <th>Кол-во</th>
                 <th>Статус</th>
@@ -61,7 +76,7 @@
 
     <script>
         async function loadItems() {
-            const res = await fetch("http://127.0.0.1:8123/api/items");
+            const res = await fetch("/api/items");
             const data = await res.json();
 
             const tbody = document.querySelector("#items-table tbody");
@@ -69,58 +84,53 @@
 
             data.items.forEach(item => {
                 const tr = document.createElement("tr");
+                tr.className = "status-" + item.status;
 
-                // ИКОНКА
-                const imgTd = document.createElement("td");
-                if (item.image_url) {
-                    const img = document.createElement("img");
-                    img.src = item.image_url;
-                    imgTd.appendChild(img);
-                }
-                tr.appendChild(imgTd);
+                const img = Array.isArray(item.image_url)
+                    ? item.image_url[0]
+                    : item.image_url;
 
-                // OFFER ID
-                tr.appendChild(td(item.offer_id));
-
-                // ✅ КАТЕГОРИЯ — БЕРЁМ КАК ЕСТЬ
-                tr.appendChild(td(item.category || "Иное"));
-
-                // QTY
-                tr.appendChild(td(item.quantity));
-
-                // STATUS
-                tr.appendChild(td(item.status));
-
-                // ACTIONS
-                const actionsTd = document.createElement("td");
-                ["in_work", "done", "delayed"].forEach(status => {
-                    const btn = document.createElement("button");
-                    btn.className = "btn";
-                    btn.textContent = status;
-                    btn.onclick = () => updateStatus(item.item_id, status);
-                    actionsTd.appendChild(btn);
-                });
-                tr.appendChild(actionsTd);
+                tr.innerHTML = `
+            <td>${img ? `<img src="${img}">` : ""}</td>
+            <td>${item.account}</td>
+            <td>${item.posting_number}</td>
+            <td>${item.offer_id}</td>
+            <td>${item.category}</td>
+            <td>${item.quantity}</td>
+            <td>${item.status}</td>
+            <td>
+                <button onclick="setStatus('${item.item_id}', 'stock')">Склад</button>
+                <button onclick="setStatus('${item.item_id}', 'awaiting_packaging')">В работу</button>
+                <button onclick="setStatus('${item.item_id}', 'delayed')">Отложить</button>
+            </td>
+        `;
 
                 tbody.appendChild(tr);
             });
         }
 
-        function td(text) {
-            const td = document.createElement("td");
-            td.textContent = text;
-            return td;
-        }
+        async function setStatus(itemId, status) {
+            console.log("UPDATE", itemId, status);
 
-        async function updateStatus(itemId, status) {
-            await fetch("http://127.0.0.1:8123/api/item/update", {
+            const res = await fetch("/api/item/update", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json"
+                },
                 body: JSON.stringify({
                     item_id: itemId,
                     status: status
                 })
             });
+
+            const text = await res.text();
+            console.log("SERVER RESPONSE:", res.status, text);
+
+            if (!res.ok) {
+                alert("Ошибка обновления статуса: " + text);
+                return;
+            }
+
             loadItems();
         }
 
